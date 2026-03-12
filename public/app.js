@@ -71,39 +71,41 @@ const ImageInput = {
 };
 
 // ===========================================
-// Module 2: Workflow Handler
+// Module 2: Workflow Manager
 // ===========================================
-const WorkflowHandler = {
-    workflow: null,
-    filename: null,
+const WorkflowManager = {
+    workflows: [],
+    selected: null,
+    loadedWorkflow: null,
 
-    load(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    this.workflow = JSON.parse(e.target.result);
-                    this.filename = file.name;
-                    resolve(this.workflow);
-                } catch (err) {
-                    reject(new Error('Invalid JSON file'));
-                }
-            };
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsText(file);
-        });
+    async fetchList() {
+        const response = await fetch('/api/workflows');
+        this.workflows = await response.json();
+        return this.workflows;
+    },
+
+    async select(id) {
+        if (!id) {
+            this.selected = null;
+            this.loadedWorkflow = null;
+            return null;
+        }
+        this.selected = this.workflows.find(w => w.id === id);
+        const response = await fetch(`/api/workflows/${id}`);
+        this.loadedWorkflow = await response.json();
+        return this.selected;
     },
 
     isLoaded() {
-        return this.workflow !== null;
+        return this.loadedWorkflow !== null;
     },
 
-    getFilename() {
-        return this.filename;
+    hasPlaceholder(name) {
+        return this.selected?.placeholders?.includes(name) || false;
     },
 
     prepareWithPrompt(prompt, imageBase64 = null) {
-        const workflowCopy = JSON.parse(JSON.stringify(this.workflow));
+        const workflowCopy = JSON.parse(JSON.stringify(this.loadedWorkflow));
         let jsonString = JSON.stringify(workflowCopy);
 
         // Replace prompt placeholder
@@ -118,11 +120,9 @@ const WorkflowHandler = {
 
         // Wrap in parent structure if not already wrapped
         if (parsed.input && parsed.input.workflow) {
-            // Already has the correct structure
             return parsed;
         }
 
-        // Wrap raw workflow in required parent structure
         return {
             input: {
                 workflow: parsed
@@ -268,35 +268,71 @@ const ImageDisplay = {
 // ===========================================
 const UIController = {
     elements: {
-        workflowInput: document.getElementById('workflow-input'),
-        workflowFilename: document.getElementById('workflow-filename'),
+        workflowSelect: document.getElementById('workflow-select'),
+        imageSection: document.getElementById('image-section'),
         imageInput: document.getElementById('image-input'),
         imageFilename: document.getElementById('image-filename'),
+        promptSection: document.getElementById('prompt-section'),
         promptInput: document.getElementById('prompt-input'),
         generateBtn: document.getElementById('generate-btn'),
         statusText: document.getElementById('status-text'),
         jobIdText: document.getElementById('job-id-text')
     },
 
-    init() {
-        this.elements.workflowInput.addEventListener('change', (e) => this.handleWorkflowUpload(e));
+    async init() {
+        // Load available workflows
+        try {
+            const workflows = await WorkflowManager.fetchList();
+            this.populateWorkflowDropdown(workflows);
+        } catch (err) {
+            this.setStatus('error', 'Failed to load workflows');
+        }
+
+        this.elements.workflowSelect.addEventListener('change', (e) => this.handleWorkflowSelect(e));
         this.elements.imageInput.addEventListener('change', (e) => this.handleImageUpload(e));
         this.elements.generateBtn.addEventListener('click', () => this.handleGenerate());
-        this.updateButtonState();
+        this.elements.generateBtn.disabled = true;
     },
 
-    async handleWorkflowUpload(event) {
-        const file = event.target.files[0];
-        if (!file) return;
+    populateWorkflowDropdown(workflows) {
+        this.elements.workflowSelect.innerHTML = '<option value="">Select a workflow...</option>';
+        workflows.forEach(w => {
+            const option = document.createElement('option');
+            option.value = w.id;
+            option.textContent = w.filename;
+            this.elements.workflowSelect.appendChild(option);
+        });
+    },
+
+    async handleWorkflowSelect(event) {
+        const id = event.target.value;
+        if (!id) {
+            this.hideAllInputs();
+            this.elements.generateBtn.disabled = true;
+            return;
+        }
 
         try {
-            await WorkflowHandler.load(file);
-            this.elements.workflowFilename.textContent = WorkflowHandler.getFilename();
-            this.elements.workflowFilename.classList.remove('empty');
-            this.updateButtonState();
+            await WorkflowManager.select(id);
+            this.updateInputVisibility();
+            this.elements.generateBtn.disabled = false;
         } catch (err) {
-            this.setStatus('error', `Load error: ${err.message}`);
+            this.setStatus('error', `Failed to load workflow: ${err.message}`);
         }
+    },
+
+    updateInputVisibility() {
+        // Show/hide based on placeholders in selected workflow
+        const showPrompt = WorkflowManager.hasPlaceholder('PROMPT_PLACEHOLDER');
+        const showImage = WorkflowManager.hasPlaceholder('IMAGE_PLACEHOLDER');
+
+        this.elements.promptSection.classList.toggle('hidden', !showPrompt);
+        this.elements.imageSection.classList.toggle('hidden', !showImage);
+    },
+
+    hideAllInputs() {
+        this.elements.promptSection.classList.add('hidden');
+        this.elements.imageSection.classList.add('hidden');
     },
 
     async handleImageUpload(event) {
@@ -318,8 +354,14 @@ const UIController = {
     },
 
     async handleGenerate() {
+        if (!WorkflowManager.isLoaded()) return;
+
         const prompt = this.elements.promptInput.value.trim();
-        if (!prompt || !WorkflowHandler.isLoaded()) return;
+        const needsPrompt = WorkflowManager.hasPlaceholder('PROMPT_PLACEHOLDER');
+        if (needsPrompt && !prompt) {
+            this.setStatus('error', 'Prompt required');
+            return;
+        }
 
         this.setGenerating(true);
         ImageDisplay.clear();
@@ -328,7 +370,7 @@ const UIController = {
         try {
             this.setStatus('submitting', 'Submitting job...');
             const imageBase64 = ImageInput.isLoaded() ? ImageInput.getBase64() : null;
-            const workflow = WorkflowHandler.prepareWithPrompt(prompt, imageBase64);
+            const workflow = WorkflowManager.prepareWithPrompt(prompt, imageBase64);
             const submitResult = await RunPodAPI.submitJob(workflow);
 
             const jobId = submitResult.id;
@@ -371,14 +413,9 @@ const UIController = {
 
     setGenerating(isGenerating) {
         this.elements.generateBtn.disabled = isGenerating;
-        this.elements.workflowInput.disabled = isGenerating;
+        this.elements.workflowSelect.disabled = isGenerating;
         this.elements.imageInput.disabled = isGenerating;
         this.elements.promptInput.disabled = isGenerating;
-    },
-
-    updateButtonState() {
-        const hasWorkflow = WorkflowHandler.isLoaded();
-        this.elements.generateBtn.disabled = !hasWorkflow;
     }
 };
 

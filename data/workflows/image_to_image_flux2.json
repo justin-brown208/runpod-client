@@ -1,0 +1,251 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "Flux2",
+      "images": [
+        "68:8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "45": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "72",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "ImageScaleToTotalPixels"
+    }
+  },
+  "72": {
+    "inputs": {
+      "image": "IMAGE_PLACEHOLDER"
+    },
+    "class_type": "ETN_LoadImageBase64",
+    "_meta": {
+      "title": "Load Image (Base64)"
+    }
+  },
+  "68:48": {
+    "inputs": {
+      "steps": 8,
+      "width": [
+        "68:68",
+        0
+      ],
+      "height": [
+        "68:68",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler",
+    "_meta": {
+      "title": "Flux2Scheduler"
+    }
+  },
+  "68:22": {
+    "inputs": {
+      "model": [
+        "68:12",
+        0
+      ],
+      "conditioning": [
+        "68:43",
+        0
+      ]
+    },
+    "class_type": "BasicGuider",
+    "_meta": {
+      "title": "BasicGuider"
+    }
+  },
+  "68:26": {
+    "inputs": {
+      "guidance": 4,
+      "conditioning": [
+        "68:6",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "FluxGuidance"
+    }
+  },
+  "68:16": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "KSamplerSelect"
+    }
+  },
+  "68:10": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "68:13": {
+    "inputs": {
+      "noise": [
+        "68:25",
+        0
+      ],
+      "guider": [
+        "68:22",
+        0
+      ],
+      "sampler": [
+        "68:16",
+        0
+      ],
+      "sigmas": [
+        "68:48",
+        0
+      ],
+      "latent_image": [
+        "68:47",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "SamplerCustomAdvanced"
+    }
+  },
+  "68:6": {
+    "inputs": {
+      "text": "PROMPT_PLACEHOLDER",
+      "clip": [
+        "68:38",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "68:38": {
+    "inputs": {
+      "clip_name": "mistral_3_small_flux2_bf16.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "68:12": {
+    "inputs": {
+      "unet_name": "flux2_dev_fp8mixed.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "68:44": {
+    "inputs": {
+      "pixels": [
+        "45",
+        0
+      ],
+      "vae": [
+        "68:10",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "68:43": {
+    "inputs": {
+      "conditioning": [
+        "68:26",
+        0
+      ],
+      "latent": [
+        "68:44",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "ReferenceLatent"
+    }
+  },
+  "68:68": {
+    "inputs": {
+      "image": [
+        "45",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "Get Image Size"
+    }
+  },
+  "68:25": {
+    "inputs": {
+      "noise_seed": 649422536169327
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "RandomNoise"
+    }
+  },
+  "68:8": {
+    "inputs": {
+      "samples": [
+        "68:13",
+        0
+      ],
+      "vae": [
+        "68:10",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "68:47": {
+    "inputs": {
+      "width": [
+        "68:68",
+        0
+      ],
+      "height": [
+        "68:68",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "Empty Flux 2 Latent"
+    }
+  }
+}
