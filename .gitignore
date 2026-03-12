@@ -1,3 +1,13 @@
-config.js
+# Environment
+.env
+
+# Node.js
+node_modules/
+
+# IDE and tools
 .claude/
 .docs/
+
+# OS files
+.DS_Store
+Thumbs.db

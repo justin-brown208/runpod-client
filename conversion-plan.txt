@@ -1,0 +1,141 @@
+================================================================================
+RUNPODCLIENT NODE.JS CONVERSION PLAN
+================================================================================
+Created: 2026-03-12
+Status: Partial implementation (steps 1-5, 10 completed)
+
+================================================================================
+SUMMARY OF REQUIREMENTS
+================================================================================
+- Frontend: Static HTML served by Express (minimal UI changes)
+- Files: Local storage for both generated images and workflow templates
+- Queue: Batch processing - watch folder for workflows and auto-process
+- Config: Environment variables via .env
+
+================================================================================
+PROPOSED PROJECT STRUCTURE (FULL)
+================================================================================
+
+RunpodClient/
+├── server.js                 # Express server entry point
+├── package.json              # Node.js dependencies
+├── .env                      # API keys & configuration
+├── .env.example              # Template for .env
+├── public/                   # Static frontend files
+│   ├── index.html            # (moved from root)
+│   └── app.js                # (modified to call backend API)
+├── src/
+│   ├── api/
+│   │   └── runpod.js         # RunPod API wrapper (server-side)
+│   ├── routes/
+│   │   ├── generate.js       # /api/generate endpoint
+│   │   ├── workflows.js      # /api/workflows CRUD
+│   │   ├── queue.js          # /api/queue status/management
+│   │   └── images.js         # /api/images listing
+│   ├── services/
+│   │   ├── queueProcessor.js # Batch queue processing logic
+│   │   └── fileWatcher.js    # Watch folder for new workflows
+│   └── utils/
+│       └── storage.js        # File system helpers
+├── data/
+│   ├── workflows/            # Local workflow JSON library
+│   ├── queue/                # Drop workflows here for batch processing
+│   ├── output/               # Generated images saved here
+│   └── processed/            # Completed queue items moved here
+└── config.js                 # (deleted - replaced by .env)
+
+================================================================================
+IMPLEMENTATION STEPS
+================================================================================
+
+[x] Step 1: Initialize Node.js project
+    - Create package.json with dependencies
+    - Dependencies: express, dotenv, chokidar, multer, uuid
+
+[x] Step 2: Create Express server
+    - Static file serving from public/
+    - API routes for /api/generate and /api/status
+
+[x] Step 3: Move frontend to public/
+    - Move index.html to public/index.html
+    - Move app.js to public/app.js
+
+[x] Step 4: Modify app.js
+    - Change RunPodAPI to call local backend instead of RunPod directly
+    - Remove API key from frontend
+
+[x] Step 5: Implement RunPod API wrapper
+    - Server-side module that handles RunPod communication
+    - Keeps API key secure on server
+
+[ ] Step 6: Add workflow management (FUTURE)
+    - CRUD operations for local workflows in data/workflows/
+    - API endpoints: GET/POST /api/workflows
+
+[ ] Step 7: Add image storage (FUTURE)
+    - Auto-save generated images to data/output/
+    - Named with timestamp + job ID
+    - API endpoint: GET /api/images
+
+[ ] Step 8: Implement queue system (FUTURE)
+    - File watcher monitors data/queue/ folder
+    - New JSON files auto-queued for processing
+    - Sequential processing (one job at a time)
+    - Move completed jobs to data/processed/
+
+[ ] Step 9: Update UI (FUTURE)
+    - Add workflow browser/selector
+    - Add queue status panel
+    - Add image gallery for past generations
+
+[x] Step 10: Create .env configuration
+    - Migrate settings from config.js to .env
+    - Create .env.example template
+    - Update .gitignore
+
+================================================================================
+NEW FEATURES (FUTURE IMPLEMENTATION)
+================================================================================
+
+1. Workflow Library (/api/workflows)
+   - List all workflows in data/workflows/
+   - Load workflow by name (no re-upload needed)
+   - Save new workflows from UI
+
+2. Batch Queue System (/api/queue)
+   - File watcher monitors data/queue/ folder
+   - New JSON files auto-queued for processing
+   - Sequential processing (one job at a time)
+   - Move completed jobs to data/processed/
+   - Queue status visible in UI
+
+3. Image Storage (/api/images)
+   - All generated images saved to data/output/
+   - Named with timestamp + job ID
+   - List/browse past generations
+
+================================================================================
+DEPENDENCIES
+================================================================================
+
+{
+  "express": "^4.18",     // Web server
+  "dotenv": "^16.3",      // Environment variables
+  "chokidar": "^3.5",     // File watching (future)
+  "multer": "^1.4",       // File uploads
+  "uuid": "^9.0"          // Job IDs (future)
+}
+
+================================================================================
+KEY CHANGES SUMMARY
+================================================================================
+
+| Component   | Current                      | After Conversion              |
+|-------------|------------------------------|-------------------------------|
+| API calls   | Direct browser to RunPod     | Browser → Node.js → RunPod    |
+| API key     | Exposed in frontend config.js| Secure in server-side .env    |
+| Workflows   | Upload each time             | (Future) Browse local library |
+| Images      | Display only                 | (Future) Auto-saved locally   |
+| Queue       | None                         | (Future) Batch folder watch   |
+
+================================================================================

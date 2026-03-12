@@ -1,4 +1,22 @@
-const API_BASE = `https://api.runpod.ai/v2/${CONFIG.endpointId}`;
+// Configuration loaded from server
+let CONFIG = {
+    promptPlaceholder: 'PROMPT_PLACEHOLDER',
+    imagePlaceholder: 'IMAGE_PLACEHOLDER',
+    pollInterval: 2000,
+    pollTimeout: 900000
+};
+
+// Load config from server on startup
+async function loadConfig() {
+    try {
+        const response = await fetch('/api/config');
+        if (response.ok) {
+            CONFIG = await response.json();
+        }
+    } catch (err) {
+        console.warn('Failed to load config, using defaults:', err.message);
+    }
+}
 
 // ===========================================
 // Module 1: Image Input Handler
@@ -114,40 +132,36 @@ const WorkflowHandler = {
 };
 
 // ===========================================
-// Module 3: RunPod API Client
+// Module 3: RunPod API Client (via local backend)
 // ===========================================
 const RunPodAPI = {
     async submitJob(requestBody) {
-        // requestBody is the complete request structure (already contains input.workflow)
         console.log('Submitting:', JSON.stringify(requestBody, null, 2));
 
-        const response = await fetch(`${API_BASE}/run`, {
+        const response = await fetch('/api/generate', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${CONFIG.apiKey}`
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Submit failed: ${response.status} - ${errorText}`);
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Submit failed: ${response.status}`);
         }
 
         return response.json();
     },
 
     async checkStatus(jobId) {
-        const response = await fetch(`${API_BASE}/status/${jobId}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${CONFIG.apiKey}`
-            }
+        const response = await fetch(`/api/status/${jobId}`, {
+            method: 'GET'
         });
 
         if (!response.ok) {
-            throw new Error(`Status check failed: ${response.status}`);
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Status check failed: ${response.status}`);
         }
 
         return response.json();
@@ -369,4 +383,6 @@ const UIController = {
 };
 
 // Initialize on page load
-UIController.init();
+loadConfig().then(() => {
+    UIController.init();
+});
