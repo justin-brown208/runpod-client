@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RunPod Image Generator</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        h1 {
+            color: #fff;
+            margin-bottom: 24px;
+        }
+
+        .section {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: #aaa;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-upload-btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #3a3a5c;
+            border: 1px solid #5a5a7c;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .file-upload-btn:hover {
+            background: #4a4a6c;
+        }
+
+        .workflow-filename {
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #2a2a4a;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            color: #8f8;
+        }
+
+        .workflow-filename.empty {
+            color: #888;
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 12px;
+            border: 1px solid #5a5a7c;
+            border-radius: 6px;
+            background: #2a2a4a;
+            color: #eee;
+            font-size: 14px;
+            resize: vertical;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #7a7afc;
+        }
+
+        button#generate-btn {
+            padding: 12px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            background: #6c5ce7;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button#generate-btn:hover:not(:disabled) {
+            background: #7c6cf7;
+        }
+
+        button#generate-btn:disabled {
+            background: #4a4a6c;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .status-container {
+            margin-top: 20px;
+            padding: 16px;
+            background: #2a2a4a;
+            border-radius: 6px;
+        }
+
+        .status-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .status-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            color: #888;
+            min-width: 80px;
+        }
+
+        .status-value {
+            font-family: monospace;
+        }
+
+        .status-value.idle { color: #888; }
+        .status-value.submitting { color: #f9ca24; }
+        .status-value.polling { color: #74b9ff; }
+        .status-value.complete { color: #55efc4; }
+        .status-value.error { color: #ff7675; }
+
+        .image-container {
+            margin-top: 24px;
+            text-align: center;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .image-placeholder {
+            padding: 60px;
+            background: #2a2a4a;
+            border: 2px dashed #4a4a6c;
+            border-radius: 8px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>RunPod Image Generator</h1>
+
+    <div class="section">
+        <label>Workflow File</label>
+        <label class="file-upload-btn" for="workflow-input">Choose Workflow JSON</label>
+        <input type="file" id="workflow-input" accept=".json">
+        <div id="workflow-filename" class="workflow-filename empty">No workflow loaded</div>
+    </div>
+
+    <div class="section">
+        <label>Source Image (optional)</label>
+        <label class="file-upload-btn" for="image-input">Choose Image</label>
+        <input type="file" id="image-input" accept="image/*">
+        <div id="image-filename" class="workflow-filename empty">No image selected</div>
+    </div>
+
+    <div class="section">
+        <label for="prompt-input">Prompt</label>
+        <textarea id="prompt-input" placeholder="Enter your prompt here..."></textarea>
+    </div>
+
+    <div class="section">
+        <button id="generate-btn" disabled>Generate Image</button>
+    </div>
+
+    <div class="status-container">
+        <div class="status-row">
+            <span class="status-label">Status:</span>
+            <span id="status-text" class="status-value idle">Idle</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Job ID:</span>
+            <span id="job-id-text" class="status-value">-</span>
+        </div>
+    </div>
+
+    <div class="image-container">
+        <div id="image-placeholder" class="image-placeholder">Generated image will appear here</div>
+        <img id="result-image" style="display: none;" alt="Generated image">
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
