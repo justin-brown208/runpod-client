@@ -132,97 +132,71 @@ const WorkflowManager = {
 };
 
 // ===========================================
-// Module 3: RunPod API Client (via local backend)
+// Module 3: Queue API Client
 // ===========================================
-const RunPodAPI = {
-    async submitJob(requestBody) {
-        console.log('Submitting:', JSON.stringify(requestBody, null, 2));
-
-        const response = await fetch('/api/generate', {
+const QueueAPI = {
+    async addToQueue(workflow) {
+        const response = await fetch('/api/queue', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(workflow)
         });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Submit failed: ${response.status}`);
-        }
-
+        if (!response.ok) throw new Error('Failed to queue');
         return response.json();
     },
 
-    async checkStatus(jobId) {
-        const response = await fetch(`/api/status/${jobId}`, {
-            method: 'GET'
+    async submitAll(currentWorkflow = null) {
+        const response = await fetch('/api/submit-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workflow: currentWorkflow })
         });
+        if (!response.ok) throw new Error('Failed to submit');
+        return response.json();
+    },
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Status check failed: ${response.status}`);
-        }
-
+    async getJobs() {
+        const response = await fetch('/api/jobs');
+        if (!response.ok) throw new Error('Failed to fetch jobs');
         return response.json();
     }
 };
 
 // ===========================================
-// Module 4: Polling Controller
+// Module 4: Jobs Poller
 // ===========================================
-const PollingController = {
-    timeoutId: null,
-    startTime: null,
+const JobsPoller = {
+    intervalId: null,
+    onUpdate: null,
 
-    start(jobId, onUpdate, onComplete, onError) {
-        this.startTime = Date.now();
-        this.poll(jobId, onUpdate, onComplete, onError);
+    start(onUpdate) {
+        // Don't create duplicate intervals
+        if (this.intervalId) return;
+
+        this.onUpdate = onUpdate;
+        this.poll();
+        this.intervalId = setInterval(() => this.poll(), CONFIG.pollInterval);
     },
 
     stop() {
-        if (this.timeoutId) {
-            clearTimeout(this.timeoutId);
-            this.timeoutId = null;
+        if (this.intervalId) {
+            clearInterval(this.intervalId);
+            this.intervalId = null;
         }
     },
 
-    async poll(jobId, onUpdate, onComplete, onError) {
-        if (Date.now() - this.startTime > CONFIG.pollTimeout) {
-            onError(new Error('Polling timeout exceeded'));
-            return;
-        }
-
+    async poll() {
         try {
-            const result = await RunPodAPI.checkStatus(jobId);
-            console.log('Status response:', result);
-            onUpdate(result.status);
+            const jobs = await QueueAPI.getJobs();
+            if (this.onUpdate) this.onUpdate(jobs);
 
-            if (result.status === 'COMPLETED') {
-                onComplete(result);
-                return;
+            // Stop polling if no jobs are in progress
+            const hasInProgress = jobs.some(j => j.status === 'IN_PROGRESS');
+            if (!hasInProgress && this.intervalId) {
+                this.stop();
             }
-
-            if (result.status === 'FAILED') {
-                // Extract error details from response
-                let errorMsg = 'Job failed';
-                if (result.error) {
-                    errorMsg = typeof result.error === 'string'
-                        ? result.error
-                        : result.error.message || JSON.stringify(result.error);
-                } else if (result.output?.error) {
-                    errorMsg = result.output.error;
-                }
-                onError(new Error(errorMsg));
-                return;
-            }
-
-            this.timeoutId = setTimeout(
-                () => this.poll(jobId, onUpdate, onComplete, onError),
-                CONFIG.pollInterval
-            );
         } catch (err) {
-            onError(err);
+            console.error('Jobs poll error:', err);
         }
     }
 };
@@ -240,12 +214,15 @@ const ImageDisplay = {
         this.placeholder.style.display = 'block';
     },
 
-    show(base64Data) {
-        let dataUrl = base64Data;
-        if (!base64Data.startsWith('data:')) {
-            dataUrl = `data:image/png;base64,${base64Data}`;
+    show(src) {
+        // Handle URLs, base64 data URLs, or raw base64
+        if (src.startsWith('/') || src.startsWith('http')) {
+            this.image.src = src;
+        } else if (src.startsWith('data:')) {
+            this.image.src = src;
+        } else {
+            this.image.src = `data:image/png;base64,${src}`;
         }
-        this.image.src = dataUrl;
         this.image.style.display = 'block';
         this.placeholder.style.display = 'none';
     },
@@ -274,13 +251,13 @@ const UIController = {
         imageFilename: document.getElementById('image-filename'),
         promptSection: document.getElementById('prompt-section'),
         promptInput: document.getElementById('prompt-input'),
-        generateBtn: document.getElementById('generate-btn'),
+        queueBtn: document.getElementById('queue-btn'),
+        submitBtn: document.getElementById('submit-btn'),
         statusText: document.getElementById('status-text'),
-        jobIdText: document.getElementById('job-id-text')
+        jobsList: document.getElementById('jobs-list')
     },
 
     async init() {
-        // Load available workflows
         try {
             const workflows = await WorkflowManager.fetchList();
             this.populateWorkflowDropdown(workflows);
@@ -290,8 +267,12 @@ const UIController = {
 
         this.elements.workflowSelect.addEventListener('change', (e) => this.handleWorkflowSelect(e));
         this.elements.imageInput.addEventListener('change', (e) => this.handleImageUpload(e));
-        this.elements.generateBtn.addEventListener('click', () => this.handleGenerate());
-        this.elements.generateBtn.disabled = true;
+        this.elements.queueBtn.addEventListener('click', () => this.handleQueue());
+        this.elements.submitBtn.addEventListener('click', () => this.handleSubmitAll());
+        this.elements.queueBtn.disabled = true;
+
+        // Load existing jobs
+        this.refreshJobs();
     },
 
     populateWorkflowDropdown(workflows) {
@@ -308,24 +289,22 @@ const UIController = {
         const id = event.target.value;
         if (!id) {
             this.hideAllInputs();
-            this.elements.generateBtn.disabled = true;
+            this.elements.queueBtn.disabled = true;
             return;
         }
 
         try {
             await WorkflowManager.select(id);
             this.updateInputVisibility();
-            this.elements.generateBtn.disabled = false;
+            this.elements.queueBtn.disabled = false;
         } catch (err) {
             this.setStatus('error', `Failed to load workflow: ${err.message}`);
         }
     },
 
     updateInputVisibility() {
-        // Show/hide based on placeholders in selected workflow
         const showPrompt = WorkflowManager.hasPlaceholder('PROMPT_PLACEHOLDER');
         const showImage = WorkflowManager.hasPlaceholder('IMAGE_PLACEHOLDER');
-
         this.elements.promptSection.classList.toggle('hidden', !showPrompt);
         this.elements.imageSection.classList.toggle('hidden', !showImage);
     },
@@ -353,69 +332,92 @@ const UIController = {
         }
     },
 
-    async handleGenerate() {
-        if (!WorkflowManager.isLoaded()) return;
-
+    getCurrentWorkflow() {
+        if (!WorkflowManager.isLoaded()) return null;
         const prompt = this.elements.promptInput.value.trim();
         const needsPrompt = WorkflowManager.hasPlaceholder('PROMPT_PLACEHOLDER');
-        if (needsPrompt && !prompt) {
+        if (needsPrompt && !prompt) return null;
+        const imageBase64 = ImageInput.isLoaded() ? ImageInput.getBase64() : null;
+        return WorkflowManager.prepareWithPrompt(prompt, imageBase64);
+    },
+
+    async handleQueue() {
+        const workflow = this.getCurrentWorkflow();
+        if (!workflow) {
             this.setStatus('error', 'Prompt required');
             return;
         }
 
-        this.setGenerating(true);
-        ImageDisplay.clear();
-        this.elements.jobIdText.textContent = '-';
+        try {
+            await QueueAPI.addToQueue(workflow);
+            this.setStatus('idle', 'Added to queue');
+        } catch (err) {
+            this.setStatus('error', `Queue error: ${err.message}`);
+        }
+    },
+
+    async handleSubmitAll() {
+        const currentWorkflow = this.getCurrentWorkflow();
 
         try {
-            this.setStatus('submitting', 'Submitting job...');
-            const imageBase64 = ImageInput.isLoaded() ? ImageInput.getBase64() : null;
-            const workflow = WorkflowManager.prepareWithPrompt(prompt, imageBase64);
-            const submitResult = await RunPodAPI.submitJob(workflow);
+            this.setStatus('submitting', 'Submitting jobs...');
+            const result = await QueueAPI.submitAll(currentWorkflow);
+            this.setStatus('polling', `Submitted ${result.submitted.length} job(s)`);
 
-            const jobId = submitResult.id;
-            this.elements.jobIdText.textContent = jobId;
-            this.setStatus('polling', 'Polling for results...');
-
-            PollingController.start(
-                jobId,
-                (status) => this.setStatus('polling', `Polling... (${status})`),
-                (result) => this.handleComplete(result),
-                (err) => this.handleError(err)
-            );
+            // Start polling for job updates
+            JobsPoller.start((jobs) => this.renderJobs(jobs));
         } catch (err) {
-            this.handleError(err);
+            this.setStatus('error', `Submit error: ${err.message}`);
         }
     },
 
-    handleComplete(result) {
-        this.setGenerating(false);
-        this.setStatus('complete', 'Complete');
+    async refreshJobs() {
+        try {
+            const jobs = await QueueAPI.getJobs();
+            this.renderJobs(jobs);
 
-        const imageData = ImageDisplay.extractFromResponse(result);
-        if (imageData) {
-            ImageDisplay.show(imageData);
+            // Start polling if any jobs are in progress
+            if (jobs.some(j => j.status === 'IN_PROGRESS')) {
+                JobsPoller.start((jobs) => this.renderJobs(jobs));
+            }
+        } catch (err) {
+            console.error('Failed to load jobs:', err);
+        }
+    },
+
+    renderJobs(jobs) {
+        this.elements.jobsList.innerHTML = jobs.map(job => `
+            <div class="job-item">
+                <span class="job-id">${job.id}</span>
+                <span class="job-status ${job.status}">${job.status}</span>
+            </div>
+        `).join('');
+
+        // Update status text based on job states
+        const inProgress = jobs.filter(j => j.status === 'IN_PROGRESS').length;
+        const completed = jobs.filter(j => j.status === 'COMPLETED').length;
+        const failed = jobs.filter(j => j.status === 'FAILED').length;
+
+        if (inProgress > 0) {
+            this.setStatus('polling', `${inProgress} job(s) in progress...`);
+        } else if (failed > 0 && completed === 0) {
+            this.setStatus('error', `${failed} job(s) failed`);
+        } else if (completed > 0) {
+            this.setStatus('complete', `${completed} job(s) completed`);
         } else {
-            this.setStatus('error', 'No image in response');
+            this.setStatus('idle', 'Idle');
         }
-    },
 
-    handleError(err) {
-        this.setGenerating(false);
-        PollingController.stop();
-        this.setStatus('error', `Error: ${err.message}`);
+        // Show latest completed image
+        const latestCompleted = jobs.find(j => j.status === 'COMPLETED' && j.outputPath);
+        if (latestCompleted) {
+            ImageDisplay.show(latestCompleted.outputPath);
+        }
     },
 
     setStatus(state, message) {
         this.elements.statusText.textContent = message;
         this.elements.statusText.className = `status-value ${state}`;
-    },
-
-    setGenerating(isGenerating) {
-        this.elements.generateBtn.disabled = isGenerating;
-        this.elements.workflowSelect.disabled = isGenerating;
-        this.elements.imageInput.disabled = isGenerating;
-        this.elements.promptInput.disabled = isGenerating;
     }
 };
 

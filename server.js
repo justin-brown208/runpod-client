@@ -13,6 +13,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve output images
+app.use('/outputs', express.static(path.join(__dirname, 'data/outputs')));
+
 // API routes
 app.use('/api', generateRoutes);
 

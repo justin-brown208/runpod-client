@@ -8,6 +8,11 @@ node_modules/
 .claude/
 .docs/
 
+# Temp directories
+data/jobs/
+data/outputs/
+data/queue/
+
 # OS files
 .DS_Store
 Thumbs.db

@@ -104,11 +104,15 @@
             border-color: #7a7afc;
         }
 
-        button#generate-btn {
-            padding: 12px 32px;
-            font-size: 16px;
+        .button-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            padding: 12px 24px;
+            font-size: 14px;
             font-weight: 600;
-            background: #6c5ce7;
             color: #fff;
             border: none;
             border-radius: 6px;
@@ -116,15 +120,57 @@
             transition: background 0.2s;
         }
 
-        button#generate-btn:hover:not(:disabled) {
-            background: #7c6cf7;
-        }
-
-        button#generate-btn:disabled {
+        button:disabled {
             background: #4a4a6c;
             cursor: not-allowed;
             opacity: 0.6;
         }
+
+        button#queue-btn {
+            background: #6c5ce7;
+        }
+
+        button#queue-btn:hover:not(:disabled) {
+            background: #7c6cf7;
+        }
+
+        button#submit-btn {
+            background: #00b894;
+        }
+
+        button#submit-btn:hover:not(:disabled) {
+            background: #00d9a5;
+        }
+
+        .jobs-list {
+            margin-top: 16px;
+        }
+
+        .job-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #2a2a4a;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        .job-id {
+            color: #aaa;
+        }
+
+        .job-status {
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .job-status.IN_PROGRESS { background: #74b9ff; color: #000; }
+        .job-status.COMPLETED { background: #55efc4; color: #000; }
+        .job-status.FAILED { background: #ff7675; color: #fff; }
 
         .status-container {
             margin-top: 20px;
@@ -201,7 +247,10 @@
     </div>
 
     <div class="section">
-        <button id="generate-btn" disabled>Generate Image</button>
+        <div class="button-row">
+            <button id="queue-btn" disabled>Queue</button>
+            <button id="submit-btn">Submit All</button>
+        </div>
     </div>
 
     <div class="status-container">
@@ -209,10 +258,7 @@
             <span class="status-label">Status:</span>
             <span id="status-text" class="status-value idle">Idle</span>
         </div>
-        <div class="status-row">
-            <span class="status-label">Job ID:</span>
-            <span id="job-id-text" class="status-value">-</span>
-        </div>
+        <div class="jobs-list" id="jobs-list"></div>
     </div>
 
     <div class="image-container">
