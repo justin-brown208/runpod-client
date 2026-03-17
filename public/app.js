@@ -2,6 +2,7 @@
 let CONFIG = {
     promptPlaceholder: 'PROMPT_PLACEHOLDER',
     imagePlaceholder: 'IMAGE_PLACEHOLDER',
+    videoPlaceholder: 'VIDEO_PLACEHOLDER',
     pollInterval: 2000,
     pollTimeout: 900000,
     videoExtensions: ['.mp4', '.mov', '.webm', '.avi', '.mkv']
@@ -159,6 +160,12 @@ const WorkflowManager = {
         // For images, replace placeholder in workflow (existing behavior)
         if (mediaInput && !mediaInput.isVideo && mediaInput.base64Data) {
             jsonString = jsonString.split(CONFIG.imagePlaceholder).join(mediaInput.base64Data);
+        }
+
+        // For videos, replace VIDEO_PLACEHOLDER with the filename
+        // The handler uploads to ComfyUI with this name, so VHS node can reference it
+        if (mediaInput && mediaInput.isVideo && mediaInput.filename) {
+            jsonString = jsonString.split(CONFIG.videoPlaceholder).join(mediaInput.filename);
         }
 
         const parsed = JSON.parse(jsonString);
@@ -363,9 +370,10 @@ const UIController = {
 
     updateInputVisibility() {
         const showPrompt = WorkflowManager.hasPlaceholder('PROMPT_PLACEHOLDER');
-        const showImage = WorkflowManager.hasPlaceholder('IMAGE_PLACEHOLDER');
+        const showFile = WorkflowManager.hasPlaceholder('IMAGE_PLACEHOLDER') ||
+                         WorkflowManager.hasPlaceholder('VIDEO_PLACEHOLDER');
         this.elements.promptSection.classList.toggle('hidden', !showPrompt);
-        this.elements.imageSection.classList.toggle('hidden', !showImage);
+        this.elements.imageSection.classList.toggle('hidden', !showFile);
     },
 
     hideAllInputs() {

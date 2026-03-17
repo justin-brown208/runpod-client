@@ -24,7 +24,7 @@ const WORKFLOWS_DIR = path.join(__dirname, '../../data/workflows');
 const QUEUE_DIR = path.join(__dirname, '../../data/queue');
 const JOBS_DIR = path.join(__dirname, '../../data/jobs');
 const OUTPUTS_DIR = path.join(__dirname, '../../data/outputs');
-const KNOWN_PLACEHOLDERS = ['PROMPT_PLACEHOLDER', 'IMAGE_PLACEHOLDER'];
+const KNOWN_PLACEHOLDERS = ['PROMPT_PLACEHOLDER', 'IMAGE_PLACEHOLDER', 'VIDEO_PLACEHOLDER'];
 
 // Ensure directories exist
 [WORKFLOWS_DIR, QUEUE_DIR, JOBS_DIR, OUTPUTS_DIR].forEach(dir => {
@@ -36,6 +36,7 @@ router.get('/config', (req, res) => {
     res.json({
         promptPlaceholder: process.env.PROMPT_PLACEHOLDER || 'PROMPT_PLACEHOLDER',
         imagePlaceholder: process.env.IMAGE_PLACEHOLDER || 'IMAGE_PLACEHOLDER',
+        videoPlaceholder: process.env.VIDEO_PLACEHOLDER || 'VIDEO_PLACEHOLDER',
         pollInterval: parseInt(process.env.POLL_INTERVAL) || 2000,
         pollTimeout: parseInt(process.env.POLL_TIMEOUT) || 900000,
         videoExtensions: VIDEO_EXTENSIONS
