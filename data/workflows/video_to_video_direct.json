@@ -12,7 +12,7 @@
       "crf": 22,
       "save_metadata": false,
       "pingpong": false,
-      "save_output": false,
+      "save_output": true,
       "images": [
         "4",
         0
@@ -37,7 +37,7 @@
   },
   "4": {
     "inputs": {
-      "video": "sample-5s.mp4",
+      "video": "VIDEO_PLACEHOLDER",
       "force_rate": 0,
       "custom_width": 0,
       "custom_height": 0,
