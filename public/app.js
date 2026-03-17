@@ -3,7 +3,8 @@ let CONFIG = {
     promptPlaceholder: 'PROMPT_PLACEHOLDER',
     imagePlaceholder: 'IMAGE_PLACEHOLDER',
     pollInterval: 2000,
-    pollTimeout: 900000
+    pollTimeout: 900000,
+    videoExtensions: ['.mp4', '.mov', '.webm', '.avi', '.mkv']
 };
 
 // Load config from server on startup
@@ -19,46 +20,79 @@ async function loadConfig() {
 }
 
 // ===========================================
-// Module 1: Image Input Handler
+// Module 1: Media Input Handler (Images + Videos)
 // ===========================================
-const ImageInput = {
-    base64Data: null,
+const MediaInput = {
+    base64Data: null,  // For images
+    ref: null,         // For videos (S3 reference)
     filename: null,
+    isVideo: false,
 
-    load(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    // Convert to PNG using canvas
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
+    _isVideoFile(filename) {
+        const ext = '.' + filename.split('.').pop().toLowerCase();
+        return CONFIG.videoExtensions.includes(ext);
+    },
 
-                    // Get base64 PNG (strip the data URL prefix)
-                    const dataUrl = canvas.toDataURL('image/png');
-                    this.base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
-                    this.filename = file.name;
-                    resolve(this.base64Data);
+    async load(file) {
+        this.clear();
+        this.filename = file.name;
+        this.isVideo = this._isVideoFile(file.name);
+
+        if (this.isVideo) {
+            // Upload video to S3
+            const formData = new FormData();
+            formData.append('video', file);
+
+            const response = await fetch('/api/upload-video', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Video upload failed');
+            }
+
+            const result = await response.json();
+            this.ref = result.ref;
+            return this.ref;
+        } else {
+            // Load image as base64
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        // Convert to PNG using canvas
+                        const canvas = document.createElement('canvas');
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+
+                        // Get base64 PNG (strip the data URL prefix)
+                        const dataUrl = canvas.toDataURL('image/png');
+                        this.base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
+                        resolve(this.base64Data);
+                    };
+                    img.onerror = () => reject(new Error('Failed to load image'));
+                    img.src = e.target.result;
                 };
-                img.onerror = () => reject(new Error('Failed to load image'));
-                img.src = e.target.result;
-            };
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsDataURL(file);
-        });
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                reader.readAsDataURL(file);
+            });
+        }
     },
 
     clear() {
         this.base64Data = null;
+        this.ref = null;
         this.filename = null;
+        this.isVideo = false;
     },
 
     isLoaded() {
-        return this.base64Data !== null;
+        return this.base64Data !== null || this.ref !== null;
     },
 
     getFilename() {
@@ -67,8 +101,19 @@ const ImageInput = {
 
     getBase64() {
         return this.base64Data;
+    },
+
+    getRef() {
+        return this.ref;
+    },
+
+    getIsVideo() {
+        return this.isVideo;
     }
 };
+
+// Backwards compatibility alias
+const ImageInput = MediaInput;
 
 // ===========================================
 // Module 2: Workflow Manager
@@ -104,30 +149,44 @@ const WorkflowManager = {
         return this.selected?.placeholders?.includes(name) || false;
     },
 
-    prepareWithPrompt(prompt, imageBase64 = null) {
+    prepareWithPrompt(prompt, mediaInput = null) {
         const workflowCopy = JSON.parse(JSON.stringify(this.loadedWorkflow));
         let jsonString = JSON.stringify(workflowCopy);
 
         // Replace prompt placeholder
         jsonString = jsonString.split(CONFIG.promptPlaceholder).join(prompt);
 
-        // Replace image placeholder if image provided
-        if (imageBase64) {
-            jsonString = jsonString.split(CONFIG.imagePlaceholder).join(imageBase64);
+        // For images, replace placeholder in workflow (existing behavior)
+        if (mediaInput && !mediaInput.isVideo && mediaInput.base64Data) {
+            jsonString = jsonString.split(CONFIG.imagePlaceholder).join(mediaInput.base64Data);
         }
 
         const parsed = JSON.parse(jsonString);
 
-        // Wrap in parent structure if not already wrapped
+        // Build the request structure
+        let request;
         if (parsed.input && parsed.input.workflow) {
-            return parsed;
+            request = parsed;
+        } else {
+            request = {
+                input: {
+                    workflow: parsed
+                }
+            };
         }
 
-        return {
-            input: {
-                workflow: parsed
+        // For videos, add to images array with ref field
+        if (mediaInput && mediaInput.isVideo && mediaInput.ref) {
+            if (!request.input.images) {
+                request.input.images = [];
             }
-        };
+            request.input.images.push({
+                name: mediaInput.filename,
+                ref: mediaInput.ref
+            });
+        }
+
+        return request;
     }
 };
 
@@ -317,18 +376,32 @@ const UIController = {
     async handleImageUpload(event) {
         const file = event.target.files[0];
         if (!file) {
-            ImageInput.clear();
-            this.elements.imageFilename.textContent = 'No image selected';
+            MediaInput.clear();
+            this.elements.imageFilename.textContent = 'No file selected';
             this.elements.imageFilename.classList.add('empty');
             return;
         }
 
         try {
-            await ImageInput.load(file);
-            this.elements.imageFilename.textContent = ImageInput.getFilename();
+            const isVideo = MediaInput._isVideoFile(file.name);
+            if (isVideo) {
+                this.setStatus('uploading', `Uploading ${file.name}...`);
+                this.elements.imageFilename.textContent = 'Uploading...';
+            }
+
+            await MediaInput.load(file);
+
+            this.elements.imageFilename.textContent = MediaInput.getFilename();
             this.elements.imageFilename.classList.remove('empty');
+
+            if (isVideo) {
+                this.setStatus('idle', `Video uploaded: ${MediaInput.getRef()}`);
+            }
         } catch (err) {
-            this.setStatus('error', `Image load error: ${err.message}`);
+            MediaInput.clear();
+            this.elements.imageFilename.textContent = 'Upload failed';
+            this.elements.imageFilename.classList.add('empty');
+            this.setStatus('error', `Upload error: ${err.message}`);
         }
     },
 
@@ -337,8 +410,16 @@ const UIController = {
         const prompt = this.elements.promptInput.value.trim();
         const needsPrompt = WorkflowManager.hasPlaceholder('PROMPT_PLACEHOLDER');
         if (needsPrompt && !prompt) return null;
-        const imageBase64 = ImageInput.isLoaded() ? ImageInput.getBase64() : null;
-        return WorkflowManager.prepareWithPrompt(prompt, imageBase64);
+
+        // Pass the full MediaInput object for video/image handling
+        const mediaInput = MediaInput.isLoaded() ? {
+            isVideo: MediaInput.getIsVideo(),
+            base64Data: MediaInput.getBase64(),
+            ref: MediaInput.getRef(),
+            filename: MediaInput.getFilename()
+        } : null;
+
+        return WorkflowManager.prepareWithPrompt(prompt, mediaInput);
     },
 
     async handleQueue() {

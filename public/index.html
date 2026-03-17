@@ -199,6 +199,7 @@
         }
 
         .status-value.idle { color: #888; }
+        .status-value.uploading { color: #a29bfe; }
         .status-value.submitting { color: #f9ca24; }
         .status-value.polling { color: #74b9ff; }
         .status-value.complete { color: #55efc4; }
@@ -235,10 +236,10 @@
     </div>
 
     <div id="image-section" class="section input-section hidden">
-        <label>Source Image</label>
-        <label class="file-upload-btn" for="image-input">Choose Image</label>
-        <input type="file" id="image-input" accept="image/*">
-        <div id="image-filename" class="workflow-filename empty">No image selected</div>
+        <label>Source File</label>
+        <label class="file-upload-btn" for="image-input">Choose File</label>
+        <input type="file" id="image-input" accept="image/*,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska">
+        <div id="image-filename" class="workflow-filename empty">No file selected</div>
     </div>
 
     <div id="prompt-section" class="section input-section hidden">

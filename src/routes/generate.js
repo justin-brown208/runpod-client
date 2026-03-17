@@ -1,8 +1,24 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const RunPodAPI = require('../api/runpod');
+const S3API = require('../api/s3');
 const fs = require('fs');
 const path = require('path');
+
+// Multer config for video uploads (memory storage)
+const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.webm', '.avi', '.mkv'];
+const upload = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        if (VIDEO_EXTENSIONS.includes(ext)) {
+            cb(null, true);
+        } else {
+            cb(new Error(`Invalid file type. Accepted: ${VIDEO_EXTENSIONS.join(', ')}`));
+        }
+    }
+});
 
 const WORKFLOWS_DIR = path.join(__dirname, '../../data/workflows');
 const QUEUE_DIR = path.join(__dirname, '../../data/queue');
@@ -21,8 +37,24 @@ router.get('/config', (req, res) => {
         promptPlaceholder: process.env.PROMPT_PLACEHOLDER || 'PROMPT_PLACEHOLDER',
         imagePlaceholder: process.env.IMAGE_PLACEHOLDER || 'IMAGE_PLACEHOLDER',
         pollInterval: parseInt(process.env.POLL_INTERVAL) || 2000,
-        pollTimeout: parseInt(process.env.POLL_TIMEOUT) || 900000
+        pollTimeout: parseInt(process.env.POLL_TIMEOUT) || 900000,
+        videoExtensions: VIDEO_EXTENSIONS
     });
+});
+
+// Upload video to S3, returns ref for use in API calls
+router.post('/upload-video', upload.single('video'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No video file provided' });
+        }
+
+        const ref = await S3API.uploadInput(req.file.buffer, req.file.originalname);
+        res.json({ ref, originalName: req.file.originalname });
+    } catch (err) {
+        console.error('Upload error:', err.message);
+        res.status(500).json({ error: `Upload failed: ${err.message}` });
+    }
 });
 
 // Submit a job to RunPod
@@ -156,21 +188,39 @@ router.get('/jobs', async (req, res) => {
                 const status = await RunPodAPI.checkStatus(job.id);
                 job.status = status.status;
 
-                if (status.status === 'COMPLETED' && status.output?.images?.[0]?.data) {
-                    // Save image to outputs
-                    const imageData = status.output.images[0].data;
-                    const outputFilename = `${job.id}.png`;
-                    const outputPath = path.join(OUTPUTS_DIR, outputFilename);
+                if (status.status === 'COMPLETED' && status.output?.images?.length > 0) {
+                    // Process each output image
+                    job.outputs = [];
+                    for (const img of status.output.images) {
+                        if (img.ref) {
+                            // Video output - download from S3
+                            const outputFilename = `${job.id}-${img.name || img.ref}`;
+                            const outputPath = path.join(OUTPUTS_DIR, outputFilename);
+                            try {
+                                await S3API.downloadOutput(img.ref, outputPath);
+                                await S3API.deleteFile(img.ref, 'outputs');
+                                job.outputs.push({ name: img.name, path: `/outputs/${outputFilename}` });
+                            } catch (err) {
+                                console.error(`Failed to download ${img.ref}:`, err.message);
+                                job.outputs.push({ name: img.name, error: err.message });
+                            }
+                        } else if (img.image) {
+                            // Base64 image - save locally
+                            const ext = img.name?.endsWith('.png') ? '' : '.png';
+                            const outputFilename = `${job.id}-${img.name || 'output'}${ext}`;
+                            const outputPath = path.join(OUTPUTS_DIR, outputFilename);
 
-                    // Handle base64 or URL
-                    if (imageData.startsWith('http')) {
-                        job.outputPath = imageData; // S3 URL
-                    } else {
-                        fs.writeFileSync(outputPath, Buffer.from(imageData, 'base64'));
-                        job.outputPath = `/outputs/${outputFilename}`;
+                            if (img.image.startsWith('http')) {
+                                job.outputs.push({ name: img.name, path: img.image });
+                            } else {
+                                fs.writeFileSync(outputPath, Buffer.from(img.image, 'base64'));
+                                job.outputs.push({ name: img.name, path: `/outputs/${outputFilename}` });
+                            }
+                        }
                     }
 
-                    // Update job file
+                    // Keep outputPath for backwards compatibility (first output)
+                    job.outputPath = job.outputs[0]?.path || null;
                     fs.writeFileSync(filepath, JSON.stringify(job));
                 } else if (status.status === 'FAILED') {
                     job.error = status.error || 'Job failed';
